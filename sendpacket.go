@@ -31,6 +31,7 @@ func main() {
     _dstIp  := flag.String("di", "10.0.0.10", "destination IPv4 address")
     srcPort := flag.Int("sp", 10, "source udp port")
     dstPort := flag.Int("dp", 0, "destination udp port")
+    _count  := flag.Int("c", 1, "repeat count")
 
     flag.Parse()
 
@@ -38,6 +39,7 @@ func main() {
     dstMac, _ := net.ParseMAC(*_dstMac)
     srcIp := net.ParseIP(*_srcIp)
     dstIp := net.ParseIP(*_dstIp)
+    count := *_count
 
     // fmt.Println("srcMac:", srcMac)
     // fmt.Println("dstMac:", dstMac)
@@ -51,7 +53,9 @@ func main() {
     if err != nil {log.Fatal(err) }
     defer handle.Close()
 
-    rawBytes := []byte{10, 20, 30}
+    //rawBytes := []byte{10, 20, 30}
+    //var rawBytes [976]byte
+    rawBytes := make([]byte, 992)
 
     // DEBUG : Send raw bytes over wire
     //err = handle.WritePacketData(rawBytes)
@@ -68,7 +72,8 @@ func main() {
         Version    : 4, //uint8
         IHL        : 5, //uint8
         TOS        : 0, //uint8
-        Length     : 46, //uint16
+        //Length     : 46, //uint16
+        Length     : 1020, //uint16
         Id         : 0, //uint16
         Flags      : 0, //IPv4Flag
         FragOffset : 0, //uint16
@@ -83,23 +88,35 @@ func main() {
     udpLayer := &layers.UDP{
         SrcPort  : layers.UDPPort(*srcPort),
         DstPort  : layers.UDPPort(*dstPort),
-        Length   : 26, // uint16
+        Length   : 1000, // uint16
         //Checksum : , // uint16
         // ?? sPort    : , // []byte
         // ?? dPort    : , // []byte
         // ?? tcpipchecksum
     }
     // And create the packet with the layers
+    buffer_udp := gopacket.NewSerializeBuffer()
+    gopacket.SerializeLayers(buffer_udp, options,
+        udpLayer,
+        gopacket.Payload(rawBytes),
+    )
+    rawBytes = buffer_udp.Bytes()
+
     buffer = gopacket.NewSerializeBuffer()
     gopacket.SerializeLayers(buffer, options,
         ethernetLayer,
         ipLayer,
-        udpLayer,
+        //udpLayer,
         gopacket.Payload(rawBytes),
     )
     outgoingPacket := buffer.Bytes()
 
-    err = handle.WritePacketData(outgoingPacket)
+    //err = handle.WritePacketData(outgoingPacket)
+    sum := 0
+    for sum < count {
+        err = handle.WritePacketData(outgoingPacket)
+        sum += 1
+    }
     if err != nil {
         log.Fatal(err)
     }
