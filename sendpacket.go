@@ -28,26 +28,64 @@ var (
     count           int
 )
 
+type IPv4Range struct {
+    sipStart    net.IP
+    dipStart    net.IP
+    sipEnd      net.IP
+    dipEnd      net.IP
+    sip         net.IP
+    dip         net.IP
+}
+
+func (v IPv4Range) next() {
+
+    for i := 0; i < 4; i++ {
+        if v.sip[15-i] >= v.sipEnd[15-i] {
+            v.sip[15-i] = v.sipStart[15-i]
+        } else {
+            v.sip[15-i]++
+            return
+        }
+    }
+    for i := 0; i < 4; i++ {
+        if v.dip[15-i] >= v.dipEnd[15-i] {
+            v.dip[15-i] = v.dipStart[15-i]
+        } else {
+            v.dip[15-i]++
+            return
+        }
+    }
+}
 
 func main() {
     // command-line flags
-    _srcMac := flag.String("sm", "02:00:00:00:00:01", "source MAC")
-    _dstMac := flag.String("dm", "06:00:00:00:00:01", "destination MAC")
-    _srcIp  := flag.String("si", "127.0.0.2", "source IPv4 address")
-    _dstIp  := flag.String("di", "10.0.0.10", "destination IPv4 address")
-    _srcPort := flag.Int("sp", 10, "source udp port")
-    _dstPort := flag.Int("dp", 0, "destination udp port")
-    _count  := flag.Int("c", 1, "repeat count")
+    _count   := flag.Int("count", 1, "repeat count")
+    _srcMac  := flag.String("smac", "02:00:00:00:00:01", "source MAC")
+    _dstMac  := flag.String("dmac", "06:00:00:00:00:01", "destination MAC")
+    _srcIp   := flag.String("sip", "127.0.0.2-9", "source IPv4 address range")
+    _dstIp   := flag.String("dip", "10.0.1-3.11", "destination IPv4 address range")
+    _srcPort := flag.String("sport", 11-13, "source udp port range")
+    _dstPort := flag.String("dport", 41-43, "destination udp port range")
 
     flag.Parse()
 
+    count = *_count
     srcMac, _ = net.ParseMAC(*_srcMac)
     dstMac, _ = net.ParseMAC(*_dstMac)
-    srcIp = net.ParseIP(*_srcIp)
-    dstIp = net.ParseIP(*_dstIp)
-    srcPort = *_srcPort
-    dstPort = *_dstPort
-    count = *_count
+
+    ipv4range := IPv4Range{
+        sip: net.ParseIP("127.0.0.2"),
+        sipStart: net.ParseIP("127.0.0.2"),
+        sipEnd: net.ParseIP("127.0.0.3"),
+        dip: net.ParseIP("10.0.1.1"),
+        dipStart: net.ParseIP("10.0.1.1"),
+        dipEnd: net.ParseIP("10.0.3.3"),
+    }
+    // debug
+    sportStart := 21
+    sportEnd := 21
+    dportStart := 31
+    dportEnd := 31
 
     //options.FixLengths = false
     options.FixLengths = true
@@ -59,14 +97,7 @@ func main() {
     if err != nil {log.Fatal(err) }
     defer handle.Close()
 
-    //rawBytes := make([]byte, 992)
     rawBytes := make([]byte, 200)
-
-    // DEBUG : Send raw bytes over wire
-    //err = handle.WritePacketData(rawBytes)
-    //if err != nil {
-    //    log.Fatal(err)
-    // }
 
     ipv4Layer := &layers.IPv4{
         Version    : 4, //uint8
@@ -83,8 +114,6 @@ func main() {
     udpLayer := &layers.UDP{
         SrcPort  : layers.UDPPort(srcPort),
         DstPort  : layers.UDPPort(dstPort),
-        //Length   : 100, // uint16
-        //Checksum : xxx, // uint16
     }
 
     ethernetLayer := &layers.Ethernet{
@@ -93,12 +122,28 @@ func main() {
         EthernetType: 0x800,
     }
 
+    // send packets: Loop = { IP src { IP dst { L4 src { L4 dst } } } }
+    sum := 1
+    for {
 
-    sum := 0
-    for sum < count {
-        send_udp(rawBytes, udpLayer, ipv4Layer, ethernetLayer)
-        sum += 1
+        ipv4Layer.SrcIP = ipv4range.sip // TODO: should not copy pointer.
+        ipv4Layer.DstIP = ipv4range.dip // TODO: should not copy pointer.
+
+        for sport := sportStart; sport <= sportEnd; sport++ {
+            udpLayer.SrcPort = layers.UDPPort(sport)
+
+            for dport := dportStart; dport <= dportEnd; dport++ {
+                udpLayer.DstPort = layers.UDPPort(dport)
+
+                // Actually send packet, and exit if <count> num of packets were sent.
+                send_udp(rawBytes, udpLayer, ipv4Layer, ethernetLayer)
+                sum += 1
+                if sum > count { goto END_SENDPACKET }
+            }
+        }
+        ipv4range.next()
     }
+    END_SENDPACKET:
 }
 
 func send_udp(data []byte,
