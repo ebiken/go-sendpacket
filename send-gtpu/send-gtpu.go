@@ -8,7 +8,7 @@ import (
     "net"
     "time"
     "flag"
-    "fmt"
+//    "fmt"
     "strings"
     "strconv"
     "errors"
@@ -38,16 +38,16 @@ func main() {
     //options.ComputeChecksums = true
 
     // command-line flags
-    _dev     := flag.String("dev", "lo", "repeat count")
-    _count   := flag.Int("count", 1, "repeat count")
+    _dev     := flag.String("dev", "lo", "device name sending  packet to")
+    _count   := flag.Int("count", 1, "repeat count. 0 = infinit")
     _srcMac  := flag.String("smac", "02:00:00:00:00:01", "source MAC")
     _dstMac  := flag.String("dmac", "06:00:00:00:00:01", "destination MAC")
     _srcIp   := flag.String("sip", "127.0.0.2", "source IPv4 address")
     _dstIp   := flag.String("dip", "10.0.1.11", "destination IPv4 address")
     _srcPort := flag.Int("sport", 9999, "source udp port")
     _dstPort := flag.Int("dport", 2152, "destination udp port") // GTP-U(2152)
-	//_teid    := flag.String("teid", "400-403", "TEID range")
 	_teid    := flag.String("teid", "400-403", "TEID range")
+	_step    := flag.Int("step", 100, "TEID incrementation step")
 
     // parse and set command-line options
     flag.Parse()
@@ -61,7 +61,8 @@ func main() {
 	srcPort = *_srcPort
 	dstPort = *_dstPort
 	teid := *_teid
-	fmt.Println(teid) // DEBUG
+	step := *_step
+
     // Open device
     handle, err = pcap.OpenLive(device, snapshot_len, promiscuous, timeout)
     if err != nil { log.Fatal(err) }
@@ -100,17 +101,19 @@ func main() {
         EthernetType: 0x800,
     }
 
-	teidStart, teidEnd, err := parse_range_int(*_teid)
+	teidStart, teidEnd, err := parse_range_int(teid)
 	if err != nil { log.Fatal(err) }
 
 	sum := 1
     for {
-        for t := teidStart; t <= teidEnd; t++ {
+        for t := teidStart; t <= teidEnd; t += step {
 			gtpLayer.TEID = uint32(t)
             // Actually send packet, and exit if <count> num of packets were sent.
             send_gtp(rawBytes, gtpLayer, udpLayer, ipv4Layer, ethernetLayer)
-            sum += 1
-            if sum > count { goto END_SENDPACKET }
+            if count !=0 {
+				sum += 1
+				if sum > count { goto END_SENDPACKET }
+			}
         }
     }
     END_SENDPACKET:
@@ -140,7 +143,7 @@ func parse_range_int(value string) (vStart, vEnd int, err error) {
     var v0, v1 int
 
     if strings.Contains(value, "-") {
-        fmt.Println("value:", value) // DEBUG
+        //fmt.Println("value:", value) // DEBUG
         values := strings.Split(value, "-")
         if len(values) != 2 {
             err = errors.New("value parse failed.")
