@@ -34,8 +34,7 @@ var (
 func main() {
     // Set other options (false or true)
     options.FixLengths = true
-    // TODO: Packet malformed when ComputeChecksum is true !?
-    //options.ComputeChecksums = true
+    options.ComputeChecksums = true
 
     // command-line flags
     _dev     := flag.String("dev", "lo", "device name sending  packet to")
@@ -109,6 +108,10 @@ func main() {
         for t := teidStart; t <= teidEnd; t += step {
 			gtpLayer.TEID = uint32(t)
             // Actually send packet, and exit if <count> num of packets were sent.
+			if err := udpLayer.SetNetworkLayerForChecksum(ipv4Layer); err != nil {
+				log.Fatal(err)
+				return
+			}
             send_gtp(rawBytes, gtpLayer, udpLayer, ipv4Layer, ethernetLayer)
             if count !=0 {
 				sum += 1
